@@ -43,50 +43,80 @@ if "broker_test_result" not in st.session_state:
 if "last_connection_attempt" not in st.session_state:
     st.session_state.last_connection_attempt = "Belum pernah"
 
+if "debug_logs" not in st.session_state:
+    st.session_state.debug_logs = []
+
+# ==================== DEBUG LOGGING ====================
+def add_debug_log(message):
+    """Add debug message to logs"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    log_entry = f"[{timestamp}] {message}"
+    st.session_state.debug_logs.append(log_entry)
+    # Keep only last 50 debug logs
+    if len(st.session_state.debug_logs) > 50:
+        st.session_state.debug_logs = st.session_state.debug_logs[-50:]
+    print(log_entry)
+
 # ==================== LOAD ML MODELS ====================
 @st.cache_resource
 def load_ml_models():
     """Load semua model ML"""
     models = {}
+    add_debug_log("🔄 Memulai loading model ML...")
+    
     try:
         # Load feature scaler
         models['scaler'] = joblib.load('feature_scaler.pkl')
+        add_debug_log("✅ Feature Scaler loaded")
         st.success("✅ Feature Scaler loaded")
-    except:
+    except Exception as e:
+        add_debug_log(f"⚠️ Feature Scaler not found: {e}")
         st.warning("⚠️ Feature Scaler not found")
         models['scaler'] = None
     
     try:
         # Load target encoder
         models['encoder'] = joblib.load('target_encoder.pkl')
+        add_debug_log("✅ Target Encoder loaded")
         st.success("✅ Target Encoder loaded")
-    except:
+    except Exception as e:
+        add_debug_log(f"⚠️ Target Encoder not found: {e}")
         st.warning("⚠️ Target Encoder not found")
         models['encoder'] = None
     
     try:
         # Load Decision Tree
         models['decision_tree'] = joblib.load('decision_tree.pkl')
+        add_debug_log("✅ Decision Tree loaded")
         st.success("✅ Decision Tree loaded")
-    except:
+    except Exception as e:
+        add_debug_log(f"⚠️ Decision Tree not found: {e}")
         st.warning("⚠️ Decision Tree not found")
         models['decision_tree'] = None
     
     try:
         # Load K-Nearest Neighbors
         models['knn'] = joblib.load('k-nearest_neighbors.pkl')
+        add_debug_log("✅ K-Nearest Neighbors loaded")
         st.success("✅ K-Nearest Neighbors loaded")
-    except:
+    except Exception as e:
+        add_debug_log(f"⚠️ K-Nearest Neighbors not found: {e}")
         st.warning("⚠️ K-Nearest Neighbors not found")
         models['knn'] = None
     
     try:
         # Load Logistic Regression
         models['logistic_regression'] = joblib.load('logistic_regression.pkl')
+        add_debug_log("✅ Logistic Regression loaded")
         st.success("✅ Logistic Regression loaded")
-    except:
+    except Exception as e:
+        add_debug_log(f"⚠️ Logistic Regression not found: {e}")
         st.warning("⚠️ Logistic Regression not found")
         models['logistic_regression'] = None
+    
+    # Cek jika semua model ada
+    loaded_models = [k for k, v in models.items() if v is not None]
+    add_debug_log(f"📊 Model yang berhasil di-load: {len(loaded_models)}/{len(models)}")
     
     return models
 
@@ -94,72 +124,102 @@ def load_ml_models():
 ml_models = load_ml_models()
 
 # ==================== FUNGSI PREDIKSI ML ====================
-def make_predictions(intensity, voltage, hour=None, minute=None):
+def make_predictions(intensity, voltage):
     """Membuat prediksi dari semua model ML"""
     predictions = {}
+    add_debug_log(f"🔍 Memulai prediksi ML: Intensity={intensity}, Voltage={voltage}")
     
     # Jika tidak ada data input
     if intensity is None or voltage is None:
+        add_debug_log("⚠️ Data input tidak lengkap untuk prediksi")
         return predictions
     
-    # Prepare features
     try:
-        # Buat feature array
-        features = np.array([[intensity, voltage]])
+        # Pastikan values adalah float
+        intensity_float = float(intensity)
+        voltage_float = float(voltage)
+        
+        add_debug_log(f"📊 Data untuk ML: intensity={intensity_float}, voltage={voltage_float}")
+        
+        # Buat feature array - PERHATIAN: Periksa shape model Anda!
+        # Biasanya model ML train dengan 2 features: [intensity, voltage]
+        features = np.array([[intensity_float, voltage_float]])
+        add_debug_log(f"📐 Features shape: {features.shape}")
         
         # Scale features jika scaler tersedia
         if ml_models['scaler'] is not None:
-            features_scaled = ml_models['scaler'].transform(features)
+            try:
+                features_scaled = ml_models['scaler'].transform(features)
+                add_debug_log(f"⚖️ Features setelah scaling: {features_scaled}")
+            except Exception as e:
+                add_debug_log(f"❌ Error scaling features: {e}")
+                features_scaled = features
         else:
             features_scaled = features
+            add_debug_log("⚠️ Menggunakan features tanpa scaling")
         
         # Predict dengan Decision Tree
         if ml_models['decision_tree'] is not None:
-            dt_pred = ml_models['decision_tree'].predict(features_scaled)[0]
-            dt_prob = ml_models['decision_tree'].predict_proba(features_scaled)[0]
-            predictions['Decision Tree'] = {
-                'prediction': dt_pred,
-                'confidence': float(np.max(dt_prob)),
-                'probabilities': dt_prob.tolist() if hasattr(dt_prob, 'tolist') else dt_prob
-            }
+            try:
+                dt_pred = ml_models['decision_tree'].predict(features_scaled)[0]
+                dt_prob = ml_models['decision_tree'].predict_proba(features_scaled)[0]
+                predictions['Decision Tree'] = {
+                    'prediction': dt_pred,
+                    'confidence': float(np.max(dt_prob)),
+                    'probabilities': dt_prob.tolist()
+                }
+                add_debug_log(f"🌳 Decision Tree: {dt_pred}, confidence: {np.max(dt_prob):.2%}")
+            except Exception as e:
+                add_debug_log(f"❌ Error Decision Tree prediction: {e}")
         
         # Predict dengan KNN
         if ml_models['knn'] is not None:
-            knn_pred = ml_models['knn'].predict(features_scaled)[0]
-            if hasattr(ml_models['knn'], 'predict_proba'):
-                knn_prob = ml_models['knn'].predict_proba(features_scaled)[0]
-                predictions['K-Nearest Neighbors'] = {
-                    'prediction': knn_pred,
-                    'confidence': float(np.max(knn_prob)),
-                    'probabilities': knn_prob.tolist() if hasattr(knn_prob, 'tolist') else knn_prob
-                }
-            else:
-                predictions['K-Nearest Neighbors'] = {
-                    'prediction': knn_pred,
-                    'confidence': None,
-                    'probabilities': None
-                }
+            try:
+                knn_pred = ml_models['knn'].predict(features_scaled)[0]
+                if hasattr(ml_models['knn'], 'predict_proba'):
+                    knn_prob = ml_models['knn'].predict_proba(features_scaled)[0]
+                    predictions['K-Nearest Neighbors'] = {
+                        'prediction': knn_pred,
+                        'confidence': float(np.max(knn_prob)),
+                        'probabilities': knn_prob.tolist()
+                    }
+                else:
+                    predictions['K-Nearest Neighbors'] = {
+                        'prediction': knn_pred,
+                        'confidence': None,
+                        'probabilities': None
+                    }
+                add_debug_log(f"👥 KNN: {knn_pred}")
+            except Exception as e:
+                add_debug_log(f"❌ Error KNN prediction: {e}")
         
         # Predict dengan Logistic Regression
         if ml_models['logistic_regression'] is not None:
-            lr_pred = ml_models['logistic_regression'].predict(features_scaled)[0]
-            lr_prob = ml_models['logistic_regression'].predict_proba(features_scaled)[0]
-            predictions['Logistic Regression'] = {
-                'prediction': lr_pred,
-                'confidence': float(np.max(lr_prob)),
-                'probabilities': lr_prob.tolist() if hasattr(lr_prob, 'tolist') else lr_prob
-            }
+            try:
+                lr_pred = ml_models['logistic_regression'].predict(features_scaled)[0]
+                lr_prob = ml_models['logistic_regression'].predict_proba(features_scaled)[0]
+                predictions['Logistic Regression'] = {
+                    'prediction': lr_pred,
+                    'confidence': float(np.max(lr_prob)),
+                    'probabilities': lr_prob.tolist()
+                }
+                add_debug_log(f"📈 Logistic Regression: {lr_pred}, confidence: {np.max(lr_prob):.2%}")
+            except Exception as e:
+                add_debug_log(f"❌ Error Logistic Regression prediction: {e}")
         
         # Decode predictions jika encoder tersedia
-        if ml_models['encoder'] is not None:
-            for model_name, pred_data in predictions.items():
-                try:
-                    if isinstance(pred_data['prediction'], (int, np.integer)):
-                        pred_data['prediction_decoded'] = ml_models['encoder'].inverse_transform([pred_data['prediction']])[0]
+        if ml_models['encoder'] is not None and predictions:
+            try:
+                for model_name, pred_data in predictions.items():
+                    pred = pred_data['prediction']
+                    if isinstance(pred, (int, np.integer)):
+                        pred_decoded = ml_models['encoder'].inverse_transform([pred])[0]
+                        pred_data['prediction_decoded'] = pred_decoded
+                        add_debug_log(f"🔤 {model_name} decoded: {pred} -> {pred_decoded}")
                     else:
-                        pred_data['prediction_decoded'] = pred_data['prediction']
-                except:
-                    pred_data['prediction_decoded'] = pred_data['prediction']
+                        pred_data['prediction_decoded'] = pred
+            except Exception as e:
+                add_debug_log(f"❌ Error decoding predictions: {e}")
         
         # Voting dari semua model
         if predictions:
@@ -173,14 +233,20 @@ def make_predictions(intensity, voltage, hour=None, minute=None):
                 from collections import Counter
                 vote_counts = Counter(all_predictions)
                 majority_vote = vote_counts.most_common(1)[0][0]
+                vote_confidence = vote_counts[majority_vote] / len(all_predictions)
+                
                 predictions['Ensemble Voting'] = {
                     'prediction': majority_vote,
-                    'confidence': vote_counts[majority_vote] / len(all_predictions),
+                    'confidence': vote_confidence,
                     'votes': dict(vote_counts)
                 }
-    
+                add_debug_log(f"🏆 Ensemble Voting: {majority_vote} (confidence: {vote_confidence:.2%})")
+        
+        add_debug_log(f"✅ Prediksi selesai: {len(predictions)} model berhasil")
+        
     except Exception as e:
-        st.error(f"Error in ML prediction: {e}")
+        add_debug_log(f"❌ Error dalam proses prediksi ML: {e}")
+        st.error(f"ML Prediction Error: {e}")
     
     return predictions
 
@@ -204,8 +270,8 @@ def on_connect(client, userdata, flags, rc, properties=None):
         st.session_state.connection_status = "✅ TERKONEKSI"
         st.session_state.connection_error = ""
         client.subscribe(MQTT_TOPIC_SENSOR)
-        print(f"✅ Connected to MQTT broker")
-        print(f"✅ Subscribed to topic: {MQTT_TOPIC_SENSOR}")
+        add_debug_log(f"✅ Connected to MQTT broker")
+        add_debug_log(f"✅ Subscribed to topic: {MQTT_TOPIC_SENSOR}")
     else:
         st.session_state.mqtt_connected = False
         error_messages = {
@@ -218,19 +284,19 @@ def on_connect(client, userdata, flags, rc, properties=None):
         error_msg = error_messages.get(rc, f"Error code: {rc}")
         st.session_state.connection_status = f"❌ {error_msg}"
         st.session_state.connection_error = error_msg
-        print(f"❌ Connection failed: {error_msg}")
+        add_debug_log(f"❌ Connection failed: {error_msg}")
 
 def on_disconnect(client, userdata, rc):
     """Callback ketika terputus dari MQTT"""
     st.session_state.mqtt_connected = False
     st.session_state.connection_status = "❌ TERPUTUS"
-    print(f"⚠️ Disconnected from MQTT broker")
+    add_debug_log(f"⚠️ Disconnected from MQTT broker")
 
 def on_message(client, userdata, msg):
     """Callback ketika menerima pesan MQTT"""
     try:
         payload = msg.payload.decode('utf-8', errors='ignore')
-        print(f"📥 Received MQTT message: {payload}")
+        add_debug_log(f"📥 Received MQTT message: {payload}")
         
         # Parse data dari ESP32 (format: {timestamp;intensity;voltage})
         if payload.startswith("{") and payload.endswith("}"):
@@ -242,26 +308,26 @@ def on_message(client, userdata, msg):
                 intensity_str = parts[1].strip()
                 voltage_str = parts[2].strip()
                 
+                add_debug_log(f"📝 Parsed parts: timestamp='{timestamp_str}', intensity='{intensity_str}', voltage='{voltage_str}'")
+                
                 # Parse values
                 try:
                     intensity = float(intensity_str)
                 except:
                     intensity = None
+                    add_debug_log("⚠️ Failed to parse intensity as float")
                 
                 try:
                     voltage = float(voltage_str)
                 except:
                     voltage = None
+                    add_debug_log("⚠️ Failed to parse voltage as float")
                 
                 # Parse timestamp
                 try:
                     timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                    hour = timestamp.hour
-                    minute = timestamp.minute
                 except:
                     timestamp = datetime.now()
-                    hour = timestamp.hour
-                    minute = timestamp.minute
                 
                 # Determine states berdasarkan logika ESP32
                 if voltage == 0.0:
@@ -274,13 +340,16 @@ def on_message(client, userdata, msg):
                     relay_state = "UNKNOWN"
                     lamp_state = "UNKNOWN"
                 
+                add_debug_log(f"💡 Determined: Relay={relay_state}, Lamp={lamp_state}")
+                
                 # Make ML predictions
-                predictions = make_predictions(intensity, voltage, hour, minute)
+                predictions = make_predictions(intensity, voltage)
                 
                 # Get ensemble prediction if available
                 ensemble_pred = None
                 if 'Ensemble Voting' in predictions:
                     ensemble_pred = predictions['Ensemble Voting']['prediction']
+                    add_debug_log(f"🏆 Ensemble prediction: {ensemble_pred}")
                 
                 # Create data row
                 row = {
@@ -289,8 +358,6 @@ def on_message(client, userdata, msg):
                     "voltage": voltage,
                     "relay_state": relay_state,
                     "lamp_state": lamp_state,
-                    "hour": hour,
-                    "minute": minute,
                     "ml_predictions": predictions,
                     "ensemble_prediction": ensemble_pred,
                     "source": "MQTT REAL"
@@ -304,10 +371,15 @@ def on_message(client, userdata, msg):
                 if len(st.session_state.logs) > 1000:
                     st.session_state.logs = st.session_state.logs[-1000:]
                 
-                print(f"✅ Parsed: Intensity={intensity}, Voltage={voltage}, ML Predictions={len(predictions)}")
+                add_debug_log(f"✅ Data stored: Intensity={intensity}, Voltage={voltage}, Predictions={len(predictions)}")
+                
+            else:
+                add_debug_log(f"⚠️ Invalid number of parts: {len(parts)} (expected 3)")
+        else:
+            add_debug_log(f"⚠️ Invalid payload format (missing curly braces): {payload}")
                 
     except Exception as e:
-        print(f"❌ Error processing MQTT message: {e}")
+        add_debug_log(f"❌ Error processing MQTT message: {e}")
 
 # ==================== FUNGSI KONEKSI MQTT ====================
 def connect_mqtt():
@@ -318,6 +390,7 @@ def connect_mqtt():
         if not success:
             st.session_state.connection_status = f"❌ Broker tidak dapat diakses: {error}"
             st.session_state.connection_error = error
+            add_debug_log(f"❌ Broker test failed: {error}")
             return False
         
         # Create MQTT client
@@ -330,13 +403,14 @@ def connect_mqtt():
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         st.session_state.mqtt_client = client
         st.session_state.last_connection_attempt = datetime.now().strftime("%H:%M:%S")
+        add_debug_log("✅ MQTT client created and connected")
         
         return True
         
     except Exception as e:
         st.session_state.connection_status = f"❌ Connection error: {str(e)}"
         st.session_state.connection_error = str(e)
-        print(f"❌ Connection failed: {e}")
+        add_debug_log(f"❌ Connection failed: {e}")
         return False
 
 def disconnect_mqtt():
@@ -344,7 +418,9 @@ def disconnect_mqtt():
     if st.session_state.mqtt_client:
         try:
             st.session_state.mqtt_client.disconnect()
+            add_debug_log("🔌 MQTT client disconnected")
         except:
+            add_debug_log("⚠️ Error disconnecting MQTT client")
             pass
     st.session_state.mqtt_connected = False
     st.session_state.connection_status = "❌ TIDAK TERKONEKSI"
@@ -439,18 +515,35 @@ with st.sidebar:
     if st.button("🗑️ Reset Data", use_container_width=True):
         st.session_state.logs = []
         st.session_state.last_data = None
+        st.session_state.debug_logs = []
         st.success("Data telah direset")
         st.rerun()
     
     if st.button("🔄 Refresh Status", use_container_width=True):
         st.rerun()
     
-    # ML Settings
+    # Test Prediction Button
     st.markdown("---")
-    st.subheader("⚙️ PENGATURAN ML")
+    st.subheader("🧪 TEST MANUAL")
     
-    show_detailed_predictions = st.toggle("Tampilkan Prediksi Detail", value=True)
-    enable_ensemble = st.toggle("Gunakan Ensemble Voting", value=True)
+    test_intensity = st.number_input("Test Intensity (%)", min_value=0.0, max_value=100.0, value=30.0)
+    test_voltage = st.number_input("Test Voltage (V)", min_value=0.0, max_value=250.0, value=220.0)
+    
+    if st.button("🧪 Test Prediction", use_container_width=True):
+        add_debug_log("🧪 Manual test prediction triggered")
+        predictions = make_predictions(test_intensity, test_voltage)
+        
+        if predictions:
+            st.success("✅ Test prediction successful!")
+            for model_name, pred_data in predictions.items():
+                pred = pred_data.get('prediction_decoded', pred_data.get('prediction', 'N/A'))
+                confidence = pred_data.get('confidence')
+                st.write(f"**{model_name}:** {pred} (confidence: {confidence:.2% if confidence else 'N/A'})")
+        else:
+            st.error("❌ No predictions generated")
+    
+    # Debug Panel Toggle
+    show_debug = st.toggle("Show Debug Logs", value=False)
 
 # ==================== MQTT LOOP POLLING ====================
 # Process MQTT messages if connected
@@ -458,7 +551,7 @@ if st.session_state.mqtt_client:
     try:
         st.session_state.mqtt_client.loop(timeout=0.1)
     except Exception as e:
-        print(f"MQTT loop error: {e}")
+        add_debug_log(f"MQTT loop error: {e}")
 
 # ==================== MAIN DASHBOARD ====================
 # Status Banner
@@ -483,6 +576,16 @@ else:
         st.success(f"✅ **TERHUBUNG KE MQTT BROKER** - Data terakhir: {time_str}")
     else:
         st.success("✅ **TERHUBUNG KE MQTT BROKER** - Menunggu data dari ESP32...")
+
+# ==================== DEBUG PANEL ====================
+if show_debug and st.session_state.debug_logs:
+    with st.expander("🔍 DEBUG LOGS", expanded=True):
+        for log in reversed(st.session_state.debug_logs[-20:]):  # Show last 20 logs
+            st.text(log)
+        
+        if st.button("Clear Debug Logs"):
+            st.session_state.debug_logs = []
+            st.rerun()
 
 # ==================== METRICS CARDS ====================
 st.header("📊 STATUS REAL-TIME & PREDIKSI ML")
@@ -567,11 +670,12 @@ if st.session_state.last_data:
     with col4:
         ensemble_pred = data.get("ensemble_prediction")
         if ensemble_pred is not None:
-            if "MENYALA" in str(ensemble_pred).upper():
+            pred_str = str(ensemble_pred)
+            if "MENYALA" in pred_str.upper() or "NYALA" in pred_str.upper() or "ON" in pred_str.upper():
                 icon = "🤖💡"
                 bg_color = "#4CAF50"
                 pred_text = "REKOMENDASI: NYALA"
-            elif "MATI" in str(ensemble_pred).upper():
+            elif "MATI" in pred_str.upper() or "OFF" in pred_str.upper():
                 icon = "🤖🌙"
                 bg_color = "#f44336"
                 pred_text = "REKOMENDASI: MATI"
@@ -580,9 +684,32 @@ if st.session_state.last_data:
                 bg_color = "#FF9800"
                 pred_text = f"PREDIKSI: {ensemble_pred}"
         else:
-            icon = "🤖⏳"
-            bg_color = "#9E9E9E"
-            pred_text = "Menunggu data..."
+            # Check individual predictions
+            ml_predictions = data.get("ml_predictions", {})
+            if ml_predictions:
+                # Get first available prediction
+                for model_name, pred_data in ml_predictions.items():
+                    pred = pred_data.get('prediction_decoded', pred_data.get('prediction'))
+                    if pred is not None:
+                        pred_str = str(pred)
+                        if "MENYALA" in pred_str.upper() or "NYALA" in pred_str.upper() or "ON" in pred_str.upper():
+                            icon = "🤖💡"
+                            bg_color = "#4CAF50"
+                            pred_text = f"{model_name}: NYALA"
+                            break
+                        elif "MATI" in pred_str.upper() or "OFF" in pred_str.upper():
+                            icon = "🤖🌙"
+                            bg_color = "#f44336"
+                            pred_text = f"{model_name}: MATI"
+                            break
+                else:
+                    icon = "🤖⏳"
+                    bg_color = "#9E9E9E"
+                    pred_text = "Processing..."
+            else:
+                icon = "🤖⏳"
+                bg_color = "#9E9E9E"
+                pred_text = "Menunggu prediksi..."
         
         st.markdown(f"""
         <div style="background-color: {bg_color}; padding: 15px; border-radius: 10px; color: white; text-align: center;">
@@ -593,137 +720,47 @@ if st.session_state.last_data:
         """, unsafe_allow_html=True)
     
     # Row 2: ML Predictions Details
-    if show_detailed_predictions and data.get("ml_predictions"):
+    if data.get("ml_predictions"):
         st.markdown("---")
         st.subheader("📊 DETAIL PREDIKSI MODEL ML")
         
         predictions = data.get("ml_predictions", {})
         
         # Create columns for each model
-        pred_cols = st.columns(len(predictions))
-        
-        for idx, (model_name, pred_data) in enumerate(predictions.items()):
-            if idx < len(pred_cols):
-                with pred_cols[idx]:
-                    pred = pred_data.get('prediction_decoded', pred_data.get('prediction', 'N/A'))
-                    confidence = pred_data.get('confidence')
-                    
-                    # Determine color based on prediction
-                    if "MENYALA" in str(pred).upper():
-                        pred_color = "#4CAF50"
-                        pred_icon = "✅"
-                    elif "MATI" in str(pred).upper():
-                        pred_color = "#f44336"
-                        pred_icon = "❌"
-                    else:
-                        pred_color = "#FF9800"
-                        pred_icon = "⚠️"
-                    
-                    st.markdown(f"""
-                    <div style="background-color: {pred_color}; padding: 15px; border-radius: 10px; color: white; text-align: center; margin-bottom: 10px;">
-                        <div style="font-size: 14px; font-weight: bold;">{model_name}</div>
-                        <div style="font-size: 24px; margin: 10px 0;">{pred_icon} {pred}</div>
-                        <div style="font-size: 14px;">Confidence: {confidence:.2% if confidence else 'N/A'}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+        model_names = list(predictions.keys())
+        if model_names:
+            pred_cols = st.columns(len(model_names))
+            
+            for idx, model_name in enumerate(model_names):
+                if idx < len(pred_cols):
+                    pred_data = predictions[model_name]
+                    with pred_cols[idx]:
+                        pred = pred_data.get('prediction_decoded', pred_data.get('prediction', 'N/A'))
+                        confidence = pred_data.get('confidence')
+                        
+                        # Determine color based on prediction
+                        pred_str = str(pred).upper()
+                        if "MENYALA" in pred_str or "NYALA" in pred_str or "ON" in pred_str:
+                            pred_color = "#4CAF50"
+                            pred_icon = "✅"
+                        elif "MATI" in pred_str or "OFF" in pred_str:
+                            pred_color = "#f44336"
+                            pred_icon = "❌"
+                        else:
+                            pred_color = "#FF9800"
+                            pred_icon = "⚠️"
+                        
+                        confidence_text = f"{confidence:.2%}" if confidence is not None else "N/A"
+                        
+                        st.markdown(f"""
+                        <div style="background-color: {pred_color}; padding: 15px; border-radius: 10px; color: white; text-align: center; margin-bottom: 10px;">
+                            <div style="font-size: 14px; font-weight: bold;">{model_name}</div>
+                            <div style="font-size: 24px; margin: 10px 0;">{pred_icon} {pred}</div>
+                            <div style="font-size: 14px;">Confidence: {confidence_text}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
 else:
     st.info("📭 **Belum ada data** - Tunggu data dari ESP32 atau sambungkan ke MQTT terlebih dahulu")
-
-# ==================== FUNGSI UTILITAS ====================
-def calculate_statistics():
-    """Calculate statistics from logs"""
-    if not st.session_state.logs:
-        return {
-            "avg_intensity": 0,
-            "avg_voltage": 0,
-            "lamp_on_percentage": 0,
-            "total_data": 0,
-            "ml_accuracy": 0,
-            "latest_timestamp": "N/A"
-        }
-    
-    df = pd.DataFrame(st.session_state.logs)
-    
-    if df.empty:
-        return {
-            "avg_intensity": 0,
-            "avg_voltage": 0,
-            "lamp_on_percentage": 0,
-            "total_data": 0,
-            "ml_accuracy": 0,
-            "latest_timestamp": "N/A"
-        }
-    
-    # Basic stats
-    avg_intensity = df["intensity"].mean() if "intensity" in df.columns and not df["intensity"].isna().all() else 0
-    avg_voltage = df["voltage"].mean() if "voltage" in df.columns and not df["voltage"].isna().all() else 0
-    
-    # Lamp on percentage
-    if "lamp_state" in df.columns:
-        lamp_on_count = (df["lamp_state"] == "MENYALA").sum()
-        lamp_on_percentage = (lamp_on_count / len(df)) * 100 if len(df) > 0 else 0
-    else:
-        lamp_on_percentage = 0
-    
-    # ML accuracy (compare ensemble prediction with actual state)
-    correct_predictions = 0
-    total_predictions = 0
-    
-    if "ensemble_prediction" in df.columns and "lamp_state" in df.columns:
-        for _, row in df.iterrows():
-            if pd.notna(row['ensemble_prediction']) and pd.notna(row['lamp_state']):
-                total_predictions += 1
-                if str(row['ensemble_prediction']).upper() in str(row['lamp_state']).upper():
-                    correct_predictions += 1
-        
-        ml_accuracy = (correct_predictions / total_predictions * 100) if total_predictions > 0 else 0
-    else:
-        ml_accuracy = 0
-    
-    # Latest timestamp
-    if "timestamp" in df.columns:
-        latest_timestamp = df["timestamp"].max()
-        if isinstance(latest_timestamp, datetime):
-            latest_timestamp = latest_timestamp.strftime("%H:%M:%S")
-        else:
-            latest_timestamp = "N/A"
-    else:
-        latest_timestamp = "N/A"
-    
-    return {
-        "avg_intensity": round(avg_intensity, 1),
-        "avg_voltage": round(avg_voltage, 1),
-        "lamp_on_percentage": round(lamp_on_percentage, 1),
-        "total_data": len(df),
-        "ml_accuracy": round(ml_accuracy, 1),
-        "latest_timestamp": latest_timestamp
-    }
-
-def create_intensity_gauge(value):
-    """Create gauge chart for light intensity"""
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=value,
-        title={"text": "INTENSITAS CAHAYA", "font": {"size": 16}},
-        domain={"x": [0, 1], "y": [0, 1]},
-        gauge={
-            "axis": {"range": [0, 100]},
-            "bar": {"color": "#FFA500"},
-            "steps": [
-                {"range": [0, 30], "color": "#4CAF50", "name": "Gelap"},
-                {"range": [30, 70], "color": "#FFC107", "name": "Sedang"},
-                {"range": [70, 100], "color": "#2196F3", "name": "Terang"}
-            ],
-            "threshold": {
-                "line": {"color": "red", "width": 4},
-                "thickness": 0.75,
-                "value": 50
-            }
-        }
-    ))
-    
-    fig.update_layout(height=250, margin=dict(t=50, b=50, l=50, r=50))
-    return fig
 
 # ==================== VISUALISASI DATA ====================
 st.header("📈 VISUALISASI DATA & PREDIKSI")
@@ -749,41 +786,6 @@ if st.session_state.logs:
                 marker=dict(size=8)
             ))
             
-            # Plot ensemble predictions jika ada
-            if "ensemble_prediction" in df.columns:
-                # Add markers for predictions
-                pred_df = df[df["ensemble_prediction"].notna()].copy()
-                if not pred_df.empty:
-                    # Create separate traces for different predictions
-                    for pred_value in pred_df["ensemble_prediction"].unique():
-                        if pred_value:
-                            mask = pred_df["ensemble_prediction"] == pred_value
-                            if "MENYALA" in str(pred_value).upper():
-                                color = "#4CAF50"
-                                symbol = "circle"
-                                name = "Prediksi: NYALA"
-                            elif "MATI" in str(pred_value).upper():
-                                color = "#f44336"
-                                symbol = "x"
-                                name = "Prediksi: MATI"
-                            else:
-                                color = "#FF9800"
-                                symbol = "diamond"
-                                name = f"Prediksi: {pred_value}"
-                            
-                            fig.add_trace(go.Scatter(
-                                x=pred_df[mask]["timestamp"],
-                                y=pred_df[mask]["intensity"],
-                                mode="markers",
-                                name=name,
-                                marker=dict(
-                                    color=color,
-                                    size=12,
-                                    symbol=symbol,
-                                    line=dict(width=2, color="white")
-                                )
-                            ))
-            
             # Add threshold line
             fig.add_hline(
                 y=50,
@@ -794,7 +796,7 @@ if st.session_state.logs:
             )
             
             fig.update_layout(
-                title="TREN INTENSITAS CAHAYA & PREDIKSI ML",
+                title="TREN INTENSITAS CAHAYA",
                 height=400,
                 xaxis_title="Waktu",
                 yaxis_title="Intensitas (%)",
@@ -805,172 +807,105 @@ if st.session_state.logs:
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
-            # Gauge chart
-            if st.session_state.last_data:
-                intensity = st.session_state.last_data.get("intensity", 50)
-                st.plotly_chart(create_intensity_gauge(intensity), use_container_width=True)
-            
             # Statistics
-            stats = calculate_statistics()
-            
-            st.metric("📊 Rata-rata Intensitas", f"{stats['avg_intensity']}%")
-            st.metric("💡 Lampu Menyala", f"{stats['lamp_on_percentage']}%")
-            st.metric("🤖 Akurasi ML", f"{stats['ml_accuracy']}%")
-            st.metric("📈 Total Data", f"{stats['total_data']}")
+            if not df.empty:
+                stats = {
+                    "avg_intensity": df["intensity"].mean() if "intensity" in df.columns else 0,
+                    "total_data": len(df),
+                    "latest_time": df["timestamp"].max().strftime("%H:%M:%S") if "timestamp" in df.columns else "N/A"
+                }
+                
+                st.metric("📊 Rata-rata Intensitas", f"{stats['avg_intensity']:.1f}%")
+                st.metric("📈 Total Data", f"{stats['total_data']}")
+                st.metric("🕐 Update Terakhir", stats['latest_time'])
+                
+                # ML Model Info
+                st.markdown("---")
+                st.subheader("🤖 INFO MODEL")
+                
+                loaded_count = sum(1 for v in ml_models.values() if v is not None)
+                st.write(f"**Model loaded:** {loaded_count}/5")
+                
+                if st.session_state.last_data and st.session_state.last_data.get("ml_predictions"):
+                    pred_count = len(st.session_state.last_data.get("ml_predictions", {}))
+                    st.write(f"**Predictions made:** {pred_count}")
     else:
         st.warning("Data tidak lengkap untuk visualisasi")
 else:
     st.info("📭 **Belum ada data untuk divisualisasikan**")
 
-# ==================== DATA HISTORIS DENGAN PREDIKSI ====================
-st.header("📋 DATA HISTORIS & PREDIKSI ML")
-
-if st.session_state.logs:
-    logs_list = st.session_state.logs[-50:]  # Last 50 records
-    df_display = pd.DataFrame(logs_list)
+# ==================== TROUBLESHOOTING GUIDE ====================
+with st.expander("🛠️ TROUBLESHOOTING GUIDE", expanded=False):
+    col_t1, col_t2 = st.columns(2)
     
-    if not df_display.empty:
-        # Format for display
-        df_display["waktu"] = df_display["timestamp"].apply(
-            lambda x: x.strftime("%H:%M:%S") if isinstance(x, datetime) else str(x)[11:19]
-        )
+    with col_t1:
+        st.markdown("""
+        **🔧 ML Predictions Not Showing?**
         
-        # Extract ensemble prediction
-        df_display["prediksi_ml"] = df_display["ensemble_prediction"].apply(
-            lambda x: str(x) if pd.notna(x) else "N/A"
-        )
+        1. **Cek Format Data ESP32:**
+           ```
+           Format: {timestamp;intensity;voltage}
+           Contoh: {2024-01-01 12:30:45;35;220.0}
+           ```
         
-        display_cols = ["waktu", "intensity", "voltage", "relay_state", "lamp_state", "prediksi_ml"]
-        display_df = df_display[display_cols].copy()
+        2. **Cek Model Files:**
+           - Pastikan semua .pkl file ada di folder yang sama
+           - File harus: `decision_tree.pkl`, `k-nearest_neighbors.pkl`, dll
         
-        # Format values
-        display_df["intensity"] = display_df["intensity"].apply(lambda x: f"{x:.1f}%" if pd.notnull(x) else "N/A")
-        display_df["voltage"] = display_df["voltage"].apply(lambda x: f"{x:.1f}V" if pd.notnull(x) else "N/A")
-        
-        # Color code predictions
-        def color_prediction(val):
-            if "MENYALA" in str(val).upper():
-                return 'background-color: #d4edda; color: #155724;'
-            elif "MATI" in str(val).upper():
-                return 'background-color: #f8d7da; color: #721c24;'
-            else:
-                return ''
-        
-        display_df.columns = ["Waktu", "Intensitas", "Tegangan", "Relay", "Lampu", "Prediksi ML"]
-        
-        # Apply styling
-        styled_df = display_df.style.applymap(color_prediction, subset=["Prediksi ML"])
-        
-        st.dataframe(
-            styled_df,
-            hide_index=True,
-            use_container_width=True,
-            height=300
-        )
-        
-        # Download button
-        csv = display_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Data CSV dengan Prediksi",
-            data=csv,
-            file_name=f"streetlight_ml_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-else:
-    st.info("📭 Tidak ada data historis")
-
-# ==================== MODEL PERFORMANCE ====================
-st.header("📊 PERFORMANSI MODEL ML")
-
-if st.session_state.logs and len(st.session_state.logs) > 10:
-    df_ml = pd.DataFrame(st.session_state.logs)
+        3. **Test Manual Prediction:**
+           - Gunakan tombol "Test Prediction" di sidebar
+           - Input intensity dan voltage manual
+           - Lihat apakah prediksi muncul
+        """)
     
-    if "ensemble_prediction" in df_ml.columns and "lamp_state" in df_ml.columns:
-        # Calculate confusion matrix
-        from collections import Counter
+    with col_t2:
+        st.markdown("""
+        **🔍 Debug Steps:**
         
-        predictions = []
-        actuals = []
+        1. **Enable Debug Logs:**
+           - Aktifkan "Show Debug Logs" di sidebar
+           - Lihat pesan error yang muncul
         
-        for _, row in df_ml.iterrows():
-            if pd.notna(row['ensemble_prediction']) and pd.notna(row['lamp_state']):
-                pred = "NYALA" if "MENYALA" in str(row['ensemble_prediction']).upper() else "MATI" if "MATI" in str(row['ensemble_prediction']).upper() else "OTHER"
-                actual = "NYALA" if "MENYALA" in str(row['lamp_state']).upper() else "MATI"
-                predictions.append(pred)
-                actuals.append(actual)
+        2. **Cek Data Format:**
+           - Pastikan intensity adalah angka (0-100)
+           - Pastikan voltage adalah angka (0.0 atau 220.0)
         
-        if predictions and actuals:
-            # Calculate accuracy per model
-            col_perf1, col_perf2 = st.columns(2)
-            
-            with col_perf1:
-                st.subheader("📈 Akurasi Model")
-                
-                # Calculate individual model accuracies
-                model_accuracies = {}
-                for model_name in ['Decision Tree', 'K-Nearest Neighbors', 'Logistic Regression']:
-                    if ml_models.get(model_name.lower().replace(' ', '_').replace('-', '_')) is not None:
-                        # Simulate accuracy (in real app, you would track predictions)
-                        model_accuracies[model_name] = np.random.uniform(85, 95)
-                
-                # Ensemble accuracy
-                correct = sum(1 for p, a in zip(predictions, actuals) if p == a)
-                total = len(predictions)
-                ensemble_accuracy = (correct / total * 100) if total > 0 else 0
-                model_accuracies['Ensemble Voting'] = ensemble_accuracy
-                
-                # Display as bar chart
-                acc_df = pd.DataFrame({
-                    'Model': list(model_accuracies.keys()),
-                    'Accuracy': list(model_accuracies.values())
-                })
-                
-                fig_acc = px.bar(
-                    acc_df,
-                    x='Model',
-                    y='Accuracy',
-                    title='Akurasi Model ML',
-                    color='Accuracy',
-                    color_continuous_scale='RdYlGn',
-                    range_color=[0, 100]
-                )
-                fig_acc.update_layout(height=300)
-                st.plotly_chart(fig_acc, use_container_width=True)
-            
-            with col_perf2:
-                st.subheader("📊 Distribusi Prediksi")
-                
-                pred_counts = Counter(predictions)
-                actual_counts = Counter(actuals)
-                
-                fig_dist = go.Figure()
-                
-                fig_dist.add_trace(go.Bar(
-                    x=list(pred_counts.keys()),
-                    y=list(pred_counts.values()),
-                    name='Prediksi',
-                    marker_color='#FFA500'
-                ))
-                
-                fig_dist.add_trace(go.Bar(
-                    x=list(actual_counts.keys()),
-                    y=list(actual_counts.values()),
-                    name='Aktual',
-                    marker_color='#2196F3'
-                ))
-                
-                fig_dist.update_layout(
-                    title='Distribusi Prediksi vs Aktual',
-                    height=300,
-                    barmode='group'
-                )
-                
-                st.plotly_chart(fig_dist, use_container_width=True)
-    else:
-        st.info("Data prediksi belum cukup untuk analisis performansi")
-else:
-    st.info("📭 Data belum cukup untuk analisis performansi model")
+        3. **Test MQTT Manual:**
+           - Buka: http://www.hivemq.com/demos/websocket-client/
+           - Connect ke: broker.hivemq.com:1883
+           - Subscribe ke: iot/streetlight
+           - Lihat apakah data masuk dengan format benar
+        """)
+    
+    # Quick Test Section
+    st.markdown("---")
+    st.subheader("🧪 QUICK TEST")
+    
+    test_col1, test_col2, test_col3 = st.columns(3)
+    
+    with test_col1:
+        if st.button("Test Low Light (Lampu Nyala)"):
+            predictions = make_predictions(25, 220.0)
+            if predictions:
+                st.success("✅ Test berhasil!")
+                pred = list(predictions.values())[0].get('prediction_decoded', 'N/A')
+                st.write(f"Prediksi: {pred}")
+    
+    with test_col2:
+        if st.button("Test High Light (Lampu Mati)"):
+            predictions = make_predictions(85, 0.0)
+            if predictions:
+                st.success("✅ Test berhasil!")
+                pred = list(predictions.values())[0].get('prediction_decoded', 'N/A')
+                st.write(f"Prediksi: {pred}")
+    
+    with test_col3:
+        if st.button("Test Medium Light"):
+            predictions = make_predictions(55, 0.0)
+            if predictions:
+                st.success("✅ Test berhasil!")
+                pred = list(predictions.values())[0].get('prediction_decoded', 'N/A')
+                st.write(f"Prediksi: {pred}")
 
 # ==================== FOOTER ====================
 st.divider()
@@ -979,12 +914,12 @@ footer_col1, footer_col2 = st.columns([1, 3])
 
 with footer_col2:
     status_icon = "🟢" if st.session_state.mqtt_connected else "🔴"
-    ml_status = "✅" if any(ml_models.values()) else "❌"
+    loaded_models = sum(1 for v in ml_models.values() if v is not None)
     
     st.markdown(f"""
     <div style="text-align: right; color: #666; font-size: 12px; padding: 10px;">
         <p>🤖 <strong>Smart Streetlight ML Dashboard</strong> | 
-        MQTT: {status_icon} | ML: {ml_status} | 
+        MQTT: {status_icon} | ML Models: {loaded_models}/5 | 
         Data: {len(st.session_state.logs)} records | 
         Update: {datetime.now().strftime('%H:%M:%S')}</p>
     </div>
@@ -1010,23 +945,6 @@ st.markdown("""
     .stButton button:hover {
         transform: translateY(-1px);
         box-shadow: 0 3px 6px rgba(0,0,0,0.1);
-    }
-    
-    /* ML prediction styling */
-    .ml-prediction {
-        padding: 10px;
-        border-radius: 5px;
-        margin: 5px 0;
-    }
-    
-    .ml-prediction-correct {
-        background-color: #d4edda;
-        border-left: 4px solid #28a745;
-    }
-    
-    .ml-prediction-incorrect {
-        background-color: #f8d7da;
-        border-left: 4px solid #dc3545;
     }
 </style>
 """, unsafe_allow_html=True)
